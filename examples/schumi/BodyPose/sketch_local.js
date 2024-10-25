@@ -1,86 +1,89 @@
 let video;
 let bodyPose;
 let poses = [];
-let connections;
+let connections = null;  // Initialize to null to avoid undefined access
 let modelLoaded = false;
-let errorMessage = '';
+let videoLoaded = false;
 
-async function preload() {
-  try {
-    // Load the bodyPose model with explicit wait
-    bodyPose = await ml5.bodyPose({
-      modelType: 'singleposelight',
-      enableSmoothing: true
-    });
+function preload() {
+  // Load the bodyPose model and set the flag when done
+  bodyPose = ml5.bodyPose(() => {
+    console.log("BodyPose model loaded successfully.");
     modelLoaded = true;
-  } catch (error) {
-    console.error('Error loading model:', error);
-    errorMessage = 'Failed to load the pose detection model';
-  }
+    // Get the skeleton connections once the model is fully loaded
+    connections = bodyPose.getSkeleton();
+    startDetectionIfReady();
+  });
 }
 
 function setup() {
-  createCanvas(640, 480);
+  createCanvas(800, 600);
 
   // Create the video and hide it
   video = createCapture(VIDEO);
-  video.size(640, 480);
+  video.size(800, 600);
   video.hide();
 
-  if (modelLoaded && bodyPose) {
+  console.log("Video is created:", video);
+
+  // Set video load flag when ready
+  video.elt.onloadeddata = () => {
+    console.log("Video loaded, attempting to start detection...");
+    videoLoaded = true;
+    startDetectionIfReady();
+  };
+}
+
+function startDetectionIfReady() {
+  if (modelLoaded && videoLoaded) {
     try {
-      // Start detecting poses in the webcam video
+      console.log("Starting pose detection...");
       bodyPose.detectStart(video, gotPoses);
-      // Get the skeleton connection information
-      connections = bodyPose.getSkeleton();
     } catch (error) {
-      console.error('Error starting detection:', error);
-      errorMessage = 'Failed to start pose detection';
+      console.error("Error starting pose detection:", error);
     }
+  } else {
+    console.log("Waiting for both video and model to be loaded...");
   }
 }
 
 function draw() {
-  // Draw the webcam video
-  image(video, 0, 0, width, height);
+  // Only draw if the model is loaded and connections are available
+  if (modelLoaded && connections !== null) {
+    image(video, 0, 0, width, height);
 
-  if (!modelLoaded || errorMessage) {
-    // Display error message if model failed to load
-    fill(255, 0, 0);
-    noStroke();
-    textSize(16);
-    textAlign(CENTER, CENTER);
-    text(errorMessage || 'Loading model...', width/2, height/2);
-    return;
-  }
-
-  // Draw the skeleton connections
-  for (let i = 0; i < poses.length; i++) {
-    let pose = poses[i];
-    for (let j = 0; j < connections.length; j++) {
-      let pointAIndex = connections[j][0];
-      let pointBIndex = connections[j][1];
-      let pointA = pose.keypoints[pointAIndex];
-      let pointB = pose.keypoints[pointBIndex];
-      // Only draw a line if both points are confident enough
-      if (pointA.confidence > 0.1 && pointB.confidence > 0.1) {
-        stroke(255, 0, 0);
-        strokeWeight(2);
-        line(pointA.x, pointA.y, pointB.x, pointB.y);
+    // Draw the skeleton connections
+    for (let i = 0; i < poses.length; i++) {
+      let pose = poses[i];
+      if (pose && pose.keypoints) {  // Check if the pose is valid
+        for (let j = 0; j < connections.length; j++) {
+          let pointAIndex = connections[j][0];
+          let pointBIndex = connections[j][1];
+          let pointA = pose.keypoints[pointAIndex];
+          let pointB = pose.keypoints[pointBIndex];
+          // Only draw a line if both points are confident enough
+          if (pointA.confidence > 0.1 && pointB.confidence > 0.1) {
+            stroke(255, 0, 0);
+            strokeWeight(2);
+            line(pointA.x, pointA.y, pointB.x, pointB.y);
+          }
+        }
       }
     }
-  }
 
-  // Draw all the tracked landmark points
-  for (let i = 0; i < poses.length; i++) {
-    let pose = poses[i];
-    for (let j = 0; j < pose.keypoints.length; j++) {
-      let keypoint = pose.keypoints[j];
-      // Only draw a circle if the keypoint's confidence is bigger than 0.1
-      if (keypoint.confidence > 0.1) {
-        fill(0, 255, 0);
-        noStroke();
-        circle(keypoint.x, keypoint.y, 10);
+    // Draw all the tracked landmark points
+    for (let i = 0; i < poses.length; i++) {
+      let pose = poses[i];
+      if (pose && pose.keypoints) {  // Check if the pose is valid
+        for (let j = 0; j < pose.keypoints.length; j++) {
+          let keypoint = pose.keypoints[j];
+          // Only draw a circle if the keypoint's confidence is bigger than 0.1
+          if (keypoint.confidence > 0.1) {
+            fill(0, 255, 0);
+            noStroke();
+            circle(keypoint.x, keypoint.y, 10);
+          }
+        }
       }
     }
   }
@@ -88,6 +91,5 @@ function draw() {
 
 // Callback function for when bodyPose outputs data
 function gotPoses(results) {
-  // Save the output to the poses variable
   poses = results;
 }
